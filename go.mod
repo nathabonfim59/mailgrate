@@ -4,6 +4,7 @@ go 1.23.4
 
 require (
 	github.com/emersion/go-imap/v2 v2.0.0-beta.5
+	github.com/sanity-io/litter v1.5.8
 	github.com/spf13/cobra v1.9.1
 )
 
