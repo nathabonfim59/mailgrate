@@ -1,9 +1,16 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
+)
+
+// Version information set by build flags
+var (
+	Version   = "dev"
+	BuildTime = "unknown"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -41,10 +48,25 @@ func Execute() {
 	}
 }
 
+// GetVersion returns the current version string
+func GetVersion() string {
+	return fmt.Sprintf("MailGrate %s (built at %s)", Version, BuildTime)
+}
+
 func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
+
+	rootCmd.Flags().BoolP("version", "v", false, "Display version information")
+	rootCmd.Run = func(cmd *cobra.Command, args []string) {
+		showVersion, _ := cmd.Flags().GetBool("version")
+		if showVersion {
+			fmt.Println(GetVersion())
+			return
+		}
+		cmd.Help()
+	}
 
 	// Source server configuration
 	rootCmd.Flags().String("source-server", "", "Source IMAP server address")
