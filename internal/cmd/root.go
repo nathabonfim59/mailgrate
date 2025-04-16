@@ -3,7 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/nathabonfim59/mailgrate/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -17,8 +19,8 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "mailgrate",
 	Short: "A tool for migrating IMAP accounts into Dovecot format",
-	Long: `Mailgrate is a utility designed to help migrate email accounts from various IMAP servers 
-into the Dovecot mail server format. It handles the conversion process while preserving 
+	Long: `Mailgrate is a utility designed to help migrate email accounts from various IMAP servers
+into the Dovecot mail server format. It handles the conversion process while preserving
 email metadata, folder structure, and message attributes.
 
 Basic usage:
@@ -59,14 +61,6 @@ func init() {
 	// will be global for your application.
 
 	rootCmd.Flags().BoolP("version", "v", false, "Display version information")
-	rootCmd.Run = func(cmd *cobra.Command, args []string) {
-		showVersion, _ := cmd.Flags().GetBool("version")
-		if showVersion {
-			fmt.Println(GetVersion())
-			return
-		}
-		cmd.Help()
-	}
 
 	// Source server configuration
 	rootCmd.Flags().String("source-server", "", "Source IMAP server address")
@@ -82,4 +76,64 @@ func init() {
 
 	// Multiple users migration
 	rootCmd.Flags().String("users-file", "", "Path to YAML file containing multiple users to migrate")
+
+	rootCmd.Run = func(cmd *cobra.Command, args []string) {
+		showVersion, _ := cmd.Flags().GetBool("version")
+		if showVersion {
+			fmt.Println(GetVersion())
+			return
+		}
+
+		// YAML file specified
+		if usersFile, _ := cmd.Flags().GetString("users-file"); usersFile != "" {
+			fmt.Println("Migrating users from file:", usersFile)
+			// err := internal.migrateUsers(usersFile)
+			// if err != nil {
+			// 	fmt.Println(err)
+			// 	os.Exit(1)
+			// }
+			return
+		}
+
+		// No YAML file specified, proceed with single user migration
+		requiredFlags := []string{"source-server", "source-user", "source-pass"}
+		for _, flag := range requiredFlags {
+			if value, _ := cmd.Flags().GetString(flag); value == "" {
+				fmt.Printf("Error: --%s flag is required\n", flag)
+				cmd.Help()
+				os.Exit(1)
+			}
+		}
+
+		sourceServer, _ := cmd.Flags().GetString("source-server")
+		sourcePort, _ := cmd.Flags().GetInt("source-port")
+		sourceUser, _ := cmd.Flags().GetString("source-user")
+		sourcePass, _ := cmd.Flags().GetString("source-pass")
+		useSSL, _ := cmd.Flags().GetBool("use-ssl")
+
+		foldersStr, _ := cmd.Flags().GetString("folders")
+		var folders []string
+		if foldersStr != "" {
+			folders = strings.Split(foldersStr, ",")
+		}
+
+		destinationPath, _ := cmd.Flags().GetString("destination-path")
+		concurrent, _ := cmd.Flags().GetInt("concurrent")
+
+		err := internal.MigrateUser(sourceServer, sourcePort, sourceUser, sourcePass, useSSL, folders, destinationPath, concurrent)
+
+		if err != nil {
+			fmt.Println("Error during migration:", err)
+			os.Exit(1)
+		}
+
+		// err := internal.migrateUser()
+		// if err != nil {
+		// 	fmt.Println(err)
+		// 	os.Exit(1)
+		// }
+		return
+
+		// cmd.Help()
+	}
 }
