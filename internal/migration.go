@@ -2,8 +2,8 @@ package internal
 
 import (
 	"fmt"
-
-	"github.com/sanity-io/litter"
+	"os"
+	"strings"
 )
 
 func MigrateUser(
@@ -26,25 +26,35 @@ func MigrateUser(
 	fmt.Println("Connected to source server: ", server.Client.State().String())
 
 	inboxes, err := server.ListMailboxes()
-
 	if err != nil {
 		return fmt.Errorf("failed to list mailboxes: %w", err)
 	}
 
-	server.SelectMailbox("INBOX.Agendamento")
-	messages, err := server.ListMessages()
-
-	litter.Dump(messages)
-	return nil
+	err = os.MkdirAll(destinationPath, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create destination path: %w", err)
+	}
 
 	for _, inbox := range inboxes {
-		fmt.Println("Inbox: ", inbox)
+		fmt.Println("Saving emails from Inbox: ", inbox.Mailbox)
 
 		server.SelectMailbox(inbox.Mailbox)
 
-		// Fetch messages from the selected mailbox
+		// Remove the 'INBOX' prefix from the mailbox name (not used in dovecot format)
+		mailboxName := strings.TrimPrefix(inbox.Mailbox, "INBOX.")
+		if mailboxName == "" {
+			mailboxName = "INBOX"
+		}
 
-		litter.Dump(inbox)
+		// Create the mailbox directory
+		mailboxPath := fmt.Sprintf("%s/%s", destinationPath, mailboxName)
+		err = os.MkdirAll(mailboxPath, 0755)
+		if err != nil {
+			return fmt.Errorf("failed to create mailbox directory: %w", err)
+		}
+
+		// Download all messages in the mailbox with the Dovecot format
+		server.DownloadAllMessages(mailboxPath, DovecotFormat)
 	}
 
 	return nil
