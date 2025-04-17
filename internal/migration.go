@@ -3,6 +3,7 @@ package internal
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -15,6 +16,7 @@ func MigrateUser(
 	folders []string,
 	destinationPath string,
 	concurrent int,
+	provider Provider,
 ) error {
 	// Connect to the source IMAP server
 	server, err := connect(sourceServer, sourcePort, sourceUser, sourcePass, useSSL)
@@ -35,26 +37,64 @@ func MigrateUser(
 		return fmt.Errorf("failed to create destination path: %w", err)
 	}
 
-	for _, inbox := range inboxes {
-		fmt.Println("Saving emails from Inbox: ", inbox.Mailbox)
+	// Filter mailboxes if specific folders were requested
+	var filteredInboxes []*struct {
+		Mailbox    string
+		Attributes []string
+	}
+	if len(folders) > 0 {
+		mapping := GetProviderMailboxMapping(provider)
+
+		for _, inbox := range inboxes {
+			// Check if this mailbox is in the requested folders list
+			for _, folder := range folders {
+				// Map standard folder names to provider-specific names
+				providerFolder := folder
+				switch strings.ToLower(folder) {
+				case "inbox":
+					providerFolder = mapping.Inbox
+				case "drafts":
+					providerFolder = mapping.Drafts
+				case "sent":
+					providerFolder = mapping.Sent
+				case "spam":
+					providerFolder = mapping.Spam
+				case "trash":
+					providerFolder = mapping.Trash
+				}
+
+				// Add the mailbox if it matches
+				if inbox.Mailbox == providerFolder {
+					filteredInboxes = append(filteredInboxes, &inbox)
+					break
+				}
+			}
+		}
+	} else {
+		// If no specific folders requested, use all mailboxes
+		filteredInboxes = inboxes
+	}
+
+	for _, inbox := range filteredInboxes {
+		fmt.Println("Saving emails from mailbox:", inbox.Mailbox)
 
 		server.SelectMailbox(inbox.Mailbox)
 
-		// Remove the 'INBOX' prefix from the mailbox name (not used in dovecot format)
-		mailboxName := strings.TrimPrefix(inbox.Mailbox, "INBOX.")
-		if mailboxName == "" {
-			mailboxName = "INBOX"
-		}
+		// Get standardized mailbox name based on provider
+		standardMailboxName := GetStandardMailboxName(provider, inbox.Mailbox)
 
-		// Create the mailbox directory
-		mailboxPath := fmt.Sprintf("%s/%s", destinationPath, mailboxName)
+		// Create the mailbox directory using standardized name
+		mailboxPath := filepath.Join(destinationPath, standardMailboxName)
 		err = os.MkdirAll(mailboxPath, 0755)
 		if err != nil {
 			return fmt.Errorf("failed to create mailbox directory: %w", err)
 		}
 
 		// Download all messages in the mailbox with the Dovecot format
-		server.DownloadAllMessages(mailboxPath, DovecotFormat)
+		err = server.DownloadAllMessages(mailboxPath, DovecotFormat)
+		if err != nil {
+			return fmt.Errorf("failed to download messages from %s: %w", inbox.Mailbox, err)
+		}
 	}
 
 	return nil

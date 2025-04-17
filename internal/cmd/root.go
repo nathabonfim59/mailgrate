@@ -73,6 +73,7 @@ func init() {
 	rootCmd.Flags().String("folders", "", "Comma-separated list of folders to migrate (default: all)")
 	rootCmd.Flags().String("destination-path", "", "Path to Dovecot mail directory")
 	rootCmd.Flags().Int("concurrent", 5, "Number of concurrent migrations (default: 5)")
+	rootCmd.Flags().String("provider", "default", "Email provider (default, locaweb, gmail, outlook)")
 
 	// Multiple users migration
 	rootCmd.Flags().String("users-file", "", "Path to YAML file containing multiple users to migrate")
@@ -116,11 +117,24 @@ func init() {
 		if foldersStr != "" {
 			folders = strings.Split(foldersStr, ",")
 		}
-
 		destinationPath, _ := cmd.Flags().GetString("destination-path")
 		concurrent, _ := cmd.Flags().GetInt("concurrent")
+		providerStr, _ := cmd.Flags().GetString("provider")
 
-		err := internal.MigrateUser(sourceServer, sourcePort, sourceUser, sourcePass, useSSL, folders, destinationPath, concurrent)
+		// Convert provider string to Provider type
+		var provider internal.Provider
+		switch providerStr {
+		case "locaweb":
+			provider = internal.LocawebProvider
+		case "gmail":
+			provider = internal.GmailProvider
+		case "outlook":
+			provider = internal.OutlookProvider
+		default:
+			provider = internal.DefaultProvider
+		}
+
+		err := internal.MigrateUser(sourceServer, sourcePort, sourceUser, sourcePass, useSSL, folders, destinationPath, concurrent, provider)
 
 		if err != nil {
 			fmt.Println("Error during migration:", err)
