@@ -305,8 +305,19 @@ func (s *IMAPServer) DownloadMessage(uid uint32, outputPath string) error {
 	return nil
 }
 
+// FilenamingFormat defines the format used for naming email files when downloading
+type FilenamingFormat int
+
+const (
+	// StandardFormat uses UID-Subject.eml naming format
+	StandardFormat FilenamingFormat = iota
+	// DovecotFormat uses Dovecot's maildir naming convention
+	DovecotFormat
+)
+
 // DownloadAllMessages downloads all messages in the selected mailbox as EML files
-func (s *IMAPServer) DownloadAllMessages(outputDir string) error {
+// format parameter allows choosing between different filename formats
+func (s *IMAPServer) DownloadAllMessages(outputDir string, format FilenamingFormat) error {
 	// First get the list of all messages
 	messages, err := s.ListMessages()
 	if err != nil {
@@ -320,27 +331,83 @@ func (s *IMAPServer) DownloadAllMessages(outputDir string) error {
 
 	// Download each message
 	for _, msg := range messages {
-		// Create a filename based on the UID and subject
-		// Clean the subject to make it safe for filenames
-		subject := msg.Subject
-		if subject == "" {
-			subject = "no_subject"
-		}
-		// Remove characters that are not safe for filenames
-		subject = strings.Map(func(r rune) rune {
-			if strings.ContainsRune(`<>:"/\|?*`, r) {
-				return '_'
+		var filename string
+
+		switch format {
+		case DovecotFormat:
+			// Create a Dovecot Maildir-style filename
+			// Format: <timestamp>.<unique-identifier>.<hostname>,S=<size>[,W=<size>]:2,<flags>
+			// Example: 1234567890.M123456P12345.hostname,S=1234:2,S (S flag for seen)
+
+			// Generate timestamp (use current time if Date is zero)
+			timestamp := time.Now().Unix()
+			if !msg.Date.IsZero() {
+				timestamp = msg.Date.Unix()
 			}
-			return r
-		}, subject)
 
-		// Limit the subject length for the filename
-		if len(subject) > 50 {
-			subject = subject[:50]
+			// Generate a unique identifier using UID
+			uniqueId := fmt.Sprintf("M%dP%d", timestamp, msg.UID)
+
+			// Add hostname (use "mailmigrate" as default hostname)
+			hostname := "mailgrate"
+
+			// Create the base filename
+			filename = fmt.Sprintf("%d.%s.%s,S=%d:2,", timestamp, uniqueId, hostname, msg.Size)
+
+			// Add flags
+			for _, flag := range msg.Flags {
+				// Map IMAP flags to Maildir flags
+				switch flag {
+				case imap.FlagSeen:
+					filename += "S"
+				case imap.FlagAnswered:
+					filename += "R"
+				case imap.FlagFlagged:
+					filename += "F"
+				case imap.FlagDeleted:
+					filename += "T"
+				case imap.FlagDraft:
+					filename += "D"
+				}
+			}
+
+			// Add .eml extension if standard format is used
+			if format != DovecotFormat {
+				filename += ".eml"
+			}
+
+		default: // StandardFormat
+			// Clean the subject to make it safe for filenames
+			subject := msg.Subject
+			if subject == "" {
+				subject = "no_subject"
+			}
+			// Remove characters that are not safe for filenames
+			subject = strings.Map(func(r rune) rune {
+				if strings.ContainsRune(`<>:"/\|?*`, r) {
+					return '_'
+				}
+				return r
+			}, subject)
+
+			// Limit the subject length for the filename
+			if len(subject) > 50 {
+				subject = subject[:50]
+			}
+
+			// Add flags indicator to filename if message is seen
+			flagsIndicator := ""
+			for _, flag := range msg.Flags {
+				if flag == imap.FlagSeen {
+					flagsIndicator = "-seen"
+					break
+				}
+			}
+
+			// Create the filename with UID, subject, and optional flags indicator
+			filename = fmt.Sprintf("%d%s-%s.eml", msg.UID, flagsIndicator, subject)
 		}
 
-		// Create the filename
-		filename := fmt.Sprintf("%d-%s.eml", msg.UID, subject)
 		outputPath := filepath.Join(outputDir, filename)
 
 		// Download the message
