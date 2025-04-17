@@ -31,6 +31,12 @@ func MigrateUser(
 		return fmt.Errorf("failed to list mailboxes: %w", err)
 	}
 
+	server.SelectMailbox("INBOX.Agendamento")
+	messages, err := server.ListMessages()
+
+	litter.Dump(messages)
+	return nil
+
 	for _, inbox := range inboxes {
 		fmt.Println("Inbox: ", inbox)
 
